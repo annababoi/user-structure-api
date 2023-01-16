@@ -16,7 +16,7 @@ module.exports = {
     },
 
     getUsersRelation: async  (userID) => {
-    const res = await Relation.aggregate([
+    const userRes = await Relation.aggregate([
         {
             $match: {
                 users: userID
@@ -31,7 +31,7 @@ module.exports = {
             }
         }
     ]);
-    return res;
+    return userRes;
 },
     findUserByToken: async (userID) => {
         const res = await OAuth.aggregate([

@@ -8,22 +8,26 @@ const Roles = require('../config/role.enum')
 module.exports = {
     register: async (req, res, next) => {
         try {
-            const { body } = req;
+            const {body} = req;
 
             const hashPassword = await authService.hashPassword(body.password);
+            const user = await userService.create({...body, password: hashPassword});
 
-           const user = await userService.create({ ...body, password: hashPassword })
-
-            console.log(user);
-
-
-            const result = await Relation.findOneAndUpdate({ boss: user._id }, {
+            const record = await Relation.findOneAndUpdate({boss: user._id}, {
                 boss: user._id,
                 users: body.sub_users_id
             });
 
-            if (!result) {
-                await userService.createRelation(user._id, body.sub_users_id)
+            if (body.boss) {
+                const record2 = await Relation.findOneAndUpdate({boss: body.boss}, {
+                    boss: body.boss,
+                    users: user._id
+                });
+            }
+
+            if (!record) {
+                await userService.createRelation(user._id, body.sub_users)
+                await userService.createRelation(body.boss, user._id)
             }
 
             res.json('Created');
@@ -33,17 +37,14 @@ module.exports = {
     },
     login: async (req, res, next) => {
         try {
-            const { user, body } = req;
-            console.log(user)
+            const {user, body} = req;
 
             await authService.comparePassword(user.password, body.password);
+            const tokenPair = authService.generateAccessTokenPair({id: user._id});
 
-            const tokenPair = authService.generateAccessTokenPair({ id: user._id });
+            await OAuth.create({...tokenPair, _user_id: user._id, _user_role: user.role})
 
-            await OAuth.create({ ...tokenPair, _user_id: user._id, _user_role: user.role })
-
-
-            res.json({ user, tokenPair });
+            res.json({user, tokenPair});
 
         } catch (e) {
             next(e)
@@ -51,17 +52,17 @@ module.exports = {
     },
     getUsers: async (req, res, next) => {
         try {
-          const { tokenInfo } = req;
-            if (tokenInfo._user_role === Roles.ADMIN){
+            const {tokenInfo} = req;
+            if (tokenInfo._user_role === Roles.ADMIN) {
                 const users = await userService.getUsers();
-                res.json(users)
-            }
-             else if (tokenInfo._user_role === Roles.BOSS){
-               const user = await userService.findUserByToken(tokenInfo._user_id);
+                res.json(users);
+
+            } else if (tokenInfo._user_role === Roles.BOSS) {
+                const user = await userService.findUserByToken(tokenInfo._user_id);
                 const users = await userService.getUsersRelation(tokenInfo._user_id);
-                res.json({ user, users })
-            }
-            else if (tokenInfo._user_role === Roles.USER){
+                res.json({user, users});
+
+            } else if (tokenInfo._user_role === Roles.USER) {
                 const user = await userService.findUserByToken(tokenInfo._user_id);
                 res.json(user)
             }
@@ -71,14 +72,18 @@ module.exports = {
     },
     changeBoss: async (req, res, next) => {
         try {
-            const { tokenInfo } = req;
+            const {tokenInfo} = req;
             const newBossId = req.body;
 
-            if (req.tokenInfo._user_role === Roles.BOSS){
-                const users = await userService.getUsersRelation(tokenInfo._user_id);
-                const updatedUser = await userService.updateOne(tokenInfo._user_id, newBossId);
-                res.json(updatedUser)
+            if (tokenInfo._user_role === Roles.BOSS) {
+                const user = await userService.findUserByToken(tokenInfo._user_id);
+                const subUsers = await userService.getUsersRelation(user.usersByToken[0]._id);
+
+                if (subUsers.length === 1) {
+                    await userService.updateOne(user.usersByToken[0]._id, newBossId)
+                } else await userService.createRelation(newBossId, subUsers);
             }
+            res.json('Updated')
         } catch (e) {
             next(e)
         }
