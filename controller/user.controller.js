@@ -15,7 +15,7 @@ module.exports = {
 
             const record = await Relation.findOneAndUpdate({boss: user._id}, {
                 boss: user._id,
-                users: body.sub_users_id
+                users: body.sub_users
             });
 
             if (body.boss) {
